@@ -20,6 +20,12 @@ dataServer:
 remoteClient:
 	$(CPP) -g remoteClient.o -o remoteClient -fsanitize=address -g3
 
+run_s:
+	./dataServer -p 12500 -s 2 -q 5 -b 512
+
+run_c:
+	./remoteClient -i 127.0.0.1 -p 12500 -d Server
+
 # Clean things
 clean:
 	rm -f $(OBJS) $(OUT) $(DIRS)
