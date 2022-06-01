@@ -4,7 +4,7 @@ OBJS	= dataServer.o remoteClient.o
 OUT	= dataServer remoteClient
 #DIRS	= named_pipes/* out/*
 CPP	= g++
-FLAGS	= -g -Wall -c
+FLAGS	= -g -Wall -c -lpthread
 
 ALL: clean $(OBJS) $(OUT)
 
@@ -21,7 +21,7 @@ remoteClient:
 	$(CPP) -g remoteClient.o -o remoteClient -fsanitize=address -g3
 
 run_s:
-	./dataServer -p 12500 -s 2 -q 5 -b 512
+	./dataServer -p 12500 -s 2 -q 2 -b 512
 
 run_c:
 	./remoteClient -i 127.0.0.1 -p 12500 -d Server

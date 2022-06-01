@@ -10,15 +10,17 @@
 #include <stdlib.h>                            /* exit */
 #include <string.h>                            /* strlen */
 
-void perror_exit(std::string message);
-
-// using namespace std;
+void perror_exit(std::string message)
+{
+    perror(message.c_str());
+    exit(EXIT_FAILURE);
+}
 
 int main(int argc, char *argv[])
 {
     std::string server_ip, directory;
-    int server_port, sock /*, i*/;
-    // char buf[256];
+    unsigned int server_port;
+    int sock;
     struct sockaddr_in server;
     struct sockaddr *serverptr = (struct sockaddr *)&server;
     struct hostent *rem;
@@ -46,12 +48,12 @@ int main(int argc, char *argv[])
 
     /* Create socket */
     if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
-        perror_exit("Socket creation failed!");
+        perror_exit("Socket creation failed");
 
     /* Find server address */
     if ((rem = gethostbyname(server_ip.c_str())) == NULL)
     {
-        herror("gethostbyname failed!");
+        herror("gethostbyname failed");
         exit(1);
     }
 
@@ -61,15 +63,12 @@ int main(int argc, char *argv[])
 
     /* Initiate connection */
     if (connect(sock, serverptr, sizeof(server)) < 0)
-        perror_exit("connect failed!");
+        perror_exit("connect failed");
 
     std::cout << "Connecting to " << server_ip << " on port " << server_port << "\n";
 
-    return 0;
-}
+    if (write(sock, directory.c_str(), directory.length()) < 0)
+        perror_exit("write failed");
 
-void perror_exit(std::string message)
-{
-    perror(message.c_str());
-    exit(EXIT_FAILURE);
+    return 0;
 }
