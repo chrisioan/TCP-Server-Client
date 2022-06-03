@@ -1,6 +1,10 @@
 //  File Name:  remoteClient.cpp
 #include <iostream>
 #include <string>
+#include <vector>
+#include <cstring>
+#include <sys/stat.h>
+#include <fstream>
 
 #include <sys/types.h>                         /* sockets */
 #include <sys/socket.h>                        /* sockets */
@@ -9,6 +13,8 @@
 #include <unistd.h>                            /* read, write, close */
 #include <stdlib.h>                            /* exit */
 #include <string.h>                            /* strlen */
+
+#define OUT_DIR "output/"
 
 void perror_exit(std::string message)
 {
@@ -20,7 +26,7 @@ int main(int argc, char *argv[])
 {
     std::string server_ip, directory;
     unsigned int server_port;
-    int sock;
+    int sock, filesize, file_count, count;
     struct sockaddr_in server;
     struct sockaddr *serverptr = (struct sockaddr *)&server;
     struct hostent *rem;
@@ -67,8 +73,83 @@ int main(int argc, char *argv[])
 
     std::cout << "Connecting to " << server_ip << " on port " << server_port << "\n";
 
+    directory += "\n"; /* To identify the end */
     if (write(sock, directory.c_str(), directory.length()) < 0)
         perror_exit("write failed");
+
+    if (mkdir(OUT_DIR, 0777))
+        if (errno != EEXIST)
+            perror_exit("mkdir failed");
+
+    char input;
+    char buffer[512];
+    std::string filename, out;
+    struct stat buf;
+    while (1)
+    {
+        memset(buffer, 0, sizeof(buffer));
+        filename = "";
+        while (read(sock, &input, 1) > 0)
+        { /* Read 1) filename from socket */
+            if (input == '\n')
+                break;
+            filename += input;
+        }
+        std::cout << "Received: " << filename << std::endl;
+
+        /* find all directories / subdirectories and create them */
+        size_t pos = 0;
+        std::string path = OUT_DIR, dir;
+        while ((pos = filename.find("/")) != std::string::npos)
+        {
+            dir = filename.substr(0, pos);
+            path += dir + "/";
+            if (mkdir(path.c_str(), 0777))
+                if (errno != EEXIST)
+                    perror_exit("mkdir failed");
+            filename.erase(0, pos + 1);
+        }
+        /* Create the file */
+        filename = path + filename;
+        if (stat(filename.c_str(), &buf) != -1)
+            rmdir(filename.c_str()); /* If file already exists - delete it */
+        std::ofstream fout(filename.c_str());
+
+        /* Read 2) metadata from socket */
+        /* Take filesize */
+        if (read(sock, &filesize, sizeof(filesize)) < 0)
+            perror_exit("read failed");
+        filesize = ntohl(filesize);
+
+        std::string msg = "DONE";
+        if (write(sock, msg.c_str(), sizeof(msg)) < 0)
+            perror_exit("write failed");
+
+        /* Take file_count */
+        if (read(sock, &file_count, sizeof(file_count)) < 0)
+            perror_exit("read failed");
+        file_count = ntohl(file_count);
+
+        if (write(sock, msg.c_str(), sizeof(msg)) < 0)
+            perror_exit("write failed");
+
+        do
+        { /* Read 3) file contents from socket */
+            memset(buffer, 0, sizeof(buffer));
+            if ((count = read(sock, buffer, sizeof(buffer))) < 0)
+                perror_exit("read failed");
+
+            filesize -= count;
+
+            fout << buffer << std::endl;
+
+        } while (filesize > 0);
+
+        if (file_count == 0) /* It was the last file */
+            break;           /* Client finished */
+    }
+
+    close(sock);
 
     return 0;
 }
