@@ -23,8 +23,11 @@ remoteClient:
 run_s:
 	./dataServer -p 12500 -s 2 -q 2 -b 512
 
-run_c:
+run_c1:
 	./remoteClient -i 127.0.0.1 -p 12500 -d Server
+
+run_c2:
+	./remoteClient -i 127.0.0.1 -p 12500 -d Server2
 
 # Clean things
 clean:

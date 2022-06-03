@@ -26,14 +26,15 @@ int newsock;
 pthread_t *tids;
 std::queue<std::map<std::string, int>> work_queue; /* Stores pair <file, socket> */
 std::map<int, int> files_per_socket;               /* Stores pair <socket, num_of_files> */
+std::map<int, pthread_mutex_t> sock_mtx;           /* Stores pair <socket, mutex> */
 pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;   /* Mutex for work_queue */
-pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;     /* Mutex for writing in same socket */
 pthread_cond_t cvar1, cvar2;                       /* Condition variable for work_queue*/
 
 struct thread_args
 { /* struct for threads arguments */
     int sock;
     unsigned int queue_size, block_size;
+    pthread_mutex_t mtx; /* Mutex for not writing in same socket */
 };
 
 void find_files(struct dirent *dir_entry, thread_args ta, pthread_t thr_id, std::string path, int flag);
@@ -129,6 +130,7 @@ int main(int argc, char *argv[])
 
         pthread_t thr;
         ta.sock = newsock;
+        ta.mtx = PTHREAD_MUTEX_INITIALIZER;
         /* New Communication Thread */
         if (pthread_create(&thr, NULL, comm_thread, (void *)&ta))
             perror_exit("pthread_create failed");
@@ -209,7 +211,8 @@ void *comm_thread(void *argp)
 
     std::cout << "[Thread: " << pthread_self() << "]: About to scan directory " << directory << "\n";
 
-    files_per_socket.insert(std::pair<int, int>(ta.sock, 0)); /* Initialize socket's number of files */
+    files_per_socket.insert(std::pair<int, int>(ta.sock, 0));          /* Initialize socket's number of files */
+    sock_mtx.insert(std::pair<int, pthread_mutex_t>(ta.sock, ta.mtx)); /* Initialize socket's mutex */
 
     if ((dir = opendir(directory.c_str())) == NULL)
         perror_exit("opendir failed");
@@ -239,6 +242,7 @@ void *worker_thread(void *argp)
     int filesize, fd, count;
     std::map<std::string, int> entry;
     std::ifstream file;
+    pthread_mutex_t *m; /* Need to have a pointer to a mutex - will find it from 'sock_mtx map' */
 
     while (1)
     {
@@ -249,10 +253,11 @@ void *worker_thread(void *argp)
         if (work_queue.empty())              /* Queue is empty */
             pthread_cond_wait(&cvar2, &mtx); /* Wait for signal */
 
-        entry = work_queue.front();      /* Take the first pair <file, socket> */
-        work_queue.pop();                /* Remove it from Queue */
-        filename = entry.begin()->first; /* Extract <file> */
-        ta.sock = entry.begin()->second; /* Extract <socket> */
+        entry = work_queue.front();          /* Take the first pair <file, socket> */
+        work_queue.pop();                    /* Remove it from Queue */
+        filename = entry.begin()->first;     /* Extract <file> */
+        ta.sock = entry.begin()->second;     /* Extract <socket> */
+        m = &sock_mtx.find(ta.sock)->second; /* Find socket's mutex */
         std::cout << "[Thread: " << pthread_self() << "]: Received task: <" << filename << ", " << ta.sock << ">\n";
 
         if (work_queue.size() < ta.queue_size) /* Queue not full */
@@ -266,8 +271,8 @@ void *worker_thread(void *argp)
         if ((file = fopen(filename.c_str(), "r")) == NULL)
             perror_exit("fopen failed");
 
-        fseek(file, 0L, SEEK_END);
-        filesize = ftell(file);
+        fseek(file, 0L, SEEK_END); /* Go to the end of the file */
+        filesize = ftell(file);    /* Store how many bytes there are */
         filesize++;
         fclose(file);
 
@@ -275,7 +280,7 @@ void *worker_thread(void *argp)
             perror_exit("open failed");
 
         /* Lock mutex */
-        if (pthread_mutex_lock(&m))
+        if (pthread_mutex_lock(m))
             perror_exit("pthread_mutex_lock failed");
 
         files_per_socket.find(ta.sock)->second -= 1; /* Decrease counter by 1 */
@@ -318,7 +323,7 @@ void *worker_thread(void *argp)
             close(ta.sock);
 
         /* Unlock mutex */
-        if (pthread_mutex_unlock(&m))
+        if (pthread_mutex_unlock(m))
             perror_exit("pthread_mutex_unlock");
 
         close(fd);
@@ -341,7 +346,6 @@ void _handler(int signum)
         close(newsock);
 
         pthread_mutex_destroy(&mtx);
-        pthread_mutex_destroy(&m);
 
         delete[] tids;
 
