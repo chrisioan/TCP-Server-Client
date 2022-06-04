@@ -273,7 +273,6 @@ void *worker_thread(void *argp)
 
         fseek(file, 0L, SEEK_END); /* Go to the end of the file */
         filesize = ftell(file);    /* Store how many bytes there are */
-        filesize++;
         fclose(file);
 
         if ((fd = open(filename.c_str(), O_RDONLY)) < 0)
@@ -291,9 +290,8 @@ void *worker_thread(void *argp)
             perror_exit("write failed");
 
         /* Write 2) metadata to socket */
-        /* Write filesize */
         in = htonl(filesize);
-        if (write(ta.sock, &in, sizeof(in)) < 0)
+        if (write(ta.sock, &in, sizeof(in)) < 0) /* Write filesize */
             perror_exit("write failed");
 
         memset(buffer, 0, sizeof(buffer)); /* Clear buffer */
@@ -302,7 +300,7 @@ void *worker_thread(void *argp)
                 break;
 
         in = htonl(files_per_socket.find(ta.sock)->second);
-        if (write(ta.sock, &in, sizeof(in)) < 0)
+        if (write(ta.sock, &in, sizeof(in)) < 0) /* Write num_of_files left */
             perror_exit("write failed");
 
         memset(buffer, 0, sizeof(buffer)); /* Clear buffer */
@@ -314,17 +312,25 @@ void *worker_thread(void *argp)
 
         while ((count = read(fd, buffer, sizeof(buffer))) > 0) /* Read a block from the file */
         {                                                      /* Write 3) file contents to socket */
-            if (write(ta.sock, &buffer, sizeof(buffer)) < 0)
+            if (write(ta.sock, &buffer, count) < 0)
                 perror_exit("write failed");
             memset(buffer, 0, sizeof(buffer)); /* Clear buffer */
         }
 
-        if (files_per_socket.find(ta.sock)->second == 0)
-            close(ta.sock);
+        memset(buffer, 0, sizeof(buffer)); /* Clear buffer */
+        while (read(ta.sock, buffer, sizeof(buffer)) > 0)
+            if (strcmp(buffer, "DONE") == 0) /* Wait for response that it got previous write */
+                break;
 
         /* Unlock mutex */
         if (pthread_mutex_unlock(m))
             perror_exit("pthread_mutex_unlock");
+
+        if (files_per_socket.find(ta.sock)->second == 0)
+        {
+            close(ta.sock);
+            pthread_mutex_destroy(m);
+        }
 
         close(fd);
     }

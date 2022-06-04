@@ -24,7 +24,9 @@ void perror_exit(std::string message)
 
 int main(int argc, char *argv[])
 {
-    std::string server_ip, directory;
+    std::string server_ip, directory, path = OUT_DIR, dir, filename, msg = "DONE";
+    struct stat buf;
+    char input, buffer[512];
     unsigned int server_port;
     int sock, filesize, file_count, count;
     struct sockaddr_in server;
@@ -81,13 +83,8 @@ int main(int argc, char *argv[])
         if (errno != EEXIST)
             perror_exit("mkdir failed");
 
-    char input;
-    char buffer[512];
-    std::string filename, out;
-    struct stat buf;
     while (1)
     {
-        memset(buffer, 0, sizeof(buffer));
         filename = "";
         while (read(sock, &input, 1) > 0)
         { /* Read 1) filename from socket */
@@ -99,7 +96,7 @@ int main(int argc, char *argv[])
 
         /* find all directories / subdirectories and create them */
         size_t pos = 0;
-        std::string path = OUT_DIR, dir;
+        path = OUT_DIR;
         while ((pos = filename.find("/")) != std::string::npos)
         {
             dir = filename.substr(0, pos);
@@ -121,7 +118,6 @@ int main(int argc, char *argv[])
             perror_exit("read failed");
         filesize = ntohl(filesize);
 
-        std::string msg = "DONE";
         if (write(sock, msg.c_str(), sizeof(msg)) < 0)
             perror_exit("write failed");
 
@@ -141,9 +137,13 @@ int main(int argc, char *argv[])
 
             filesize -= count;
 
-            fout << buffer << std::endl;
+            for (int i = 0; i < count; i++)
+                fout << buffer[i];
 
         } while (filesize > 0);
+
+        if (write(sock, msg.c_str(), sizeof(msg)) < 0)
+            perror_exit("write failed");
 
         if (file_count == 0) /* It was the last file */
             break;           /* Client finished */
