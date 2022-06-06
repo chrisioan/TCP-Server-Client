@@ -2,7 +2,6 @@
 .PHONY: clean
 OBJS	= dataServer.o remoteClient.o
 OUT	= dataServer remoteClient
-#DIRS	= named_pipes/* out/*
 CPP	= g++
 FLAGS	= -g -Wall -c -lpthread
 
@@ -20,15 +19,6 @@ dataServer:
 remoteClient:
 	$(CPP) -g remoteClient.o -o remoteClient -fsanitize=address -g3
 
-run_s:
-	./dataServer -p 12500 -s 2 -q 2 -b 512
-
-run_c1:
-	./remoteClient -i 127.0.0.1 -p 12500 -d Server
-
-run_c2:
-	./remoteClient -i 127.0.0.1 -p 12500 -d Server2
-
 # Clean things
 clean:
-	rm -f $(OBJS) $(OUT) $(DIRS)
+	rm -f $(OBJS) $(OUT)

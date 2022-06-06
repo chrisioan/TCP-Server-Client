@@ -4,40 +4,30 @@
 #include <queue>
 #include <vector>
 #include <map>
-#include <iterator>
 #include <fstream>
 #include <fcntl.h>
-
-#include <sys/wait.h>                          /* sockets */
-#include <sys/types.h>                         /* sockets */
-#include <sys/socket.h>                        /* sockets */
-#include <netinet/in.h> /* internet sockets */ /* for sockaddr_in */
-#include <netdb.h>                             /* gethostbyaddr */
-#include <unistd.h>                            /* fork */
-#include <stdlib.h>                            /* exit */
-#include <ctype.h>                             /* toupper */
-#include <signal.h>                            /* signal */
-#include <arpa/inet.h>                         /* for hton * */
-#include <pthread.h>                           /* for threads */
-#include <dirent.h>                            /* for readdir */
+#include <sys/wait.h>   /* sockets */
+#include <sys/types.h>  /* sockets */
+#include <sys/socket.h> /* sockets */
+#include <netinet/in.h> /* internet sockets */
+#include <netdb.h>      /* gethostbyaddr */
+#include <unistd.h>
+#include <stdlib.h>    /* exit */
+#include <signal.h>    /* signal */
+#include <arpa/inet.h> /* for hton */
+#include <pthread.h>   /* for threads */
+#include <dirent.h>    /* for readdir */
 
 int server_sock;
-int newsock;
+unsigned int queue_size, block_size;
 pthread_t *tids;
 std::queue<std::map<std::string, int>> work_queue; /* Stores pair <file, socket> */
 std::map<int, int> files_per_socket;               /* Stores pair <socket, num_of_files> */
-std::map<int, pthread_mutex_t> sock_mtx;           /* Stores pair <socket, mutex> */
-pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;   /* Mutex for work_queue */
+std::map<int, pthread_mutex_t *> sock_mtx;         /* Stores pair <socket, mutex*> */
+pthread_mutex_t mtx;                               /* Mutex for work_queue */
 pthread_cond_t cvar1, cvar2;                       /* Condition variable for work_queue*/
 
-struct thread_args
-{ /* struct for threads arguments */
-    int sock;
-    unsigned int queue_size, block_size;
-    pthread_mutex_t mtx; /* Mutex for not writing in same socket */
-};
-
-void find_files(struct dirent *dir_entry, thread_args ta, pthread_t thr_id, std::string path, int flag);
+void find_files(struct dirent *dir_entry, int socket, pthread_t thr_id, std::string path, int flag);
 void *comm_thread(void *argp);
 void *worker_thread(void *argp);
 void perror_exit(std::string message);
@@ -51,13 +41,13 @@ int main(int argc, char *argv[])
     sigfillset(&(act.sa_mask));
     sigaction(SIGINT, &act, NULL);
 
-    unsigned int port, thread_pool_size, queue_size, block_size;
+    int newsock;
+    unsigned int port, thread_pool_size;
     struct sockaddr_in server, client;
     socklen_t clientlen = sizeof(client);
     struct sockaddr *serverptr = (struct sockaddr *)&server;
     struct sockaddr *clientptr = (struct sockaddr *)&client;
     struct hostent *rem;
-    thread_args ta;
 
     if (argc != 9) /* Check if program is executed correctly */
     {
@@ -85,13 +75,12 @@ int main(int argc, char *argv[])
 
     pthread_cond_init(&cvar1, NULL); /* Initialize condition variable */
     pthread_cond_init(&cvar2, NULL); /* Initialize condition variable */
+    mtx = PTHREAD_MUTEX_INITIALIZER; /* Initialize Mutex for work_queue */
 
-    ta.queue_size = queue_size;
-    ta.block_size = block_size;
     tids = new pthread_t[thread_pool_size];
     /* Create <thread_pool_size> Worker Thread(s) */
     for (unsigned int i = 0; i < thread_pool_size; i++)
-        if (pthread_create(&tids[i], NULL, worker_thread, (void *)&ta))
+        if (pthread_create(&tids[i], NULL, worker_thread, NULL))
             perror_exit("pthread_create failed");
 
     /* Create socket */
@@ -129,17 +118,14 @@ int main(int argc, char *argv[])
         std::cout << "Accepted connection from " << rem->h_name << "\n\n";
 
         pthread_t thr;
-        ta.sock = newsock;
-        ta.mtx = PTHREAD_MUTEX_INITIALIZER;
-        /* New Communication Thread */
-        if (pthread_create(&thr, NULL, comm_thread, (void *)&ta))
+        if (pthread_create(&thr, NULL, comm_thread, (void *)&newsock))
             perror_exit("pthread_create failed");
     }
 
     return 0;
 }
 
-void find_files(struct dirent *dir_entry, thread_args ta, pthread_t thr_id, std::string path, int flag)
+void find_files(struct dirent *dir_entry, int socket, pthread_t thr_id, std::string path, int flag)
 {
     DIR *dir;
     path += dir_entry->d_name;
@@ -158,31 +144,31 @@ void find_files(struct dirent *dir_entry, thread_args ta, pthread_t thr_id, std:
         if (flag == 0) /* Find total amount of files */
         {
             while ((dir_entry = readdir(dir)) != NULL)
-                find_files(dir_entry, ta, thr_id, path, 0); /* Recursion */
+                find_files(dir_entry, socket, thr_id, path, 0); /* Recursion */
         }
         else
         {
             while ((dir_entry = readdir(dir)) != NULL)
-                find_files(dir_entry, ta, thr_id, path, 1); /* Recursion */
+                find_files(dir_entry, socket, thr_id, path, 1); /* Recursion */
         }
         closedir(dir);
     }
     else if (dir_entry->d_type == DT_REG) /* if it's a regular file */
     {
         if (flag == 0)
-            files_per_socket.find(ta.sock)->second += 1; /* Increase counter by 1 */
+            files_per_socket.find(socket)->second += 1; /* Increase counter by 1 */
         else
         {
             /* Lock mutex */
             if (pthread_mutex_lock(&mtx))
                 perror_exit("pthread_mutex_lock failed");
 
-            if (work_queue.size() == ta.queue_size) /* Queue is full - can't add more */
-                pthread_cond_wait(&cvar1, &mtx);    /* Wait for signal */
+            if (work_queue.size() == queue_size) /* Queue is full - can't add more */
+                pthread_cond_wait(&cvar1, &mtx); /* Wait for signal */
 
             std::cout << "[Thread: " << thr_id << "]: Adding file " << path << " to the queue...\n";
-            entry.insert(std::pair<std::string, int>(path, ta.sock)); /* Create the pair <file, socket> */
-            work_queue.push(entry);                                   /* Add the pair to the Queue */
+            entry.insert(std::pair<std::string, int>(path, socket)); /* Create the pair <file, socket> */
+            work_queue.push(entry);                                  /* Add the pair to the Queue */
 
             if (work_queue.size() > 0)       /* Queue not empty */
                 pthread_cond_signal(&cvar2); /* Awake other thread */
@@ -196,13 +182,14 @@ void find_files(struct dirent *dir_entry, thread_args ta, pthread_t thr_id, std:
 
 void *comm_thread(void *argp)
 {
+    int socket = *(int *)argp;
     char buf;
     std::string path, directory = "";
-    thread_args ta = *(thread_args *)argp;
     DIR *dir, *dir2;
     struct dirent *dir_entry;
+    static thread_local pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
 
-    while (read(ta.sock, &buf, 1) > 0)
+    while (read(socket, &buf, 1) > 0)
     { /* Read from client's socket the directory to be copied */
         if (buf == '\n')
             break;
@@ -211,23 +198,23 @@ void *comm_thread(void *argp)
 
     std::cout << "[Thread: " << pthread_self() << "]: About to scan directory " << directory << "\n";
 
-    files_per_socket.insert(std::pair<int, int>(ta.sock, 0));          /* Initialize socket's number of files */
-    sock_mtx.insert(std::pair<int, pthread_mutex_t>(ta.sock, ta.mtx)); /* Initialize socket's mutex */
+    files_per_socket.insert(std::pair<int, int>(socket, 0));        /* Initialize socket's number of files */
+    sock_mtx.insert(std::pair<int, pthread_mutex_t *>(socket, &m)); /* Initialize socket's mutex */
 
     if ((dir = opendir(directory.c_str())) == NULL)
         perror_exit("opendir failed");
 
     path += directory + "/";
 
-    while ((dir_entry = readdir(dir)) != NULL)              /* Find total amount of files */
-        find_files(dir_entry, ta, pthread_self(), path, 0); /* Including those in subfolders - using recursion */
+    while ((dir_entry = readdir(dir)) != NULL)                  /* Find total amount of files */
+        find_files(dir_entry, socket, pthread_self(), path, 0); /* Including those in subfolders - using recursion */
     closedir(dir);
 
     if ((dir2 = opendir(directory.c_str())) == NULL)
         perror_exit("opendir failed");
 
-    while ((dir_entry = readdir(dir2)) != NULL)             /* Add all the files 'directory' dir to Queue */
-        find_files(dir_entry, ta, pthread_self(), path, 1); /* Including those in subfolders - using recursion */
+    while ((dir_entry = readdir(dir2)) != NULL)                 /* Add all the files 'directory' dir to Queue */
+        find_files(dir_entry, socket, pthread_self(), path, 1); /* Including those in subfolders - using recursion */
     closedir(dir2);
 
     pthread_exit(NULL);
@@ -236,10 +223,9 @@ void *comm_thread(void *argp)
 void *worker_thread(void *argp)
 {
     std::string filename;
-    thread_args ta = *(thread_args *)argp;
-    char buffer[ta.block_size];
+    char buffer[block_size];
     uint32_t in;
-    int filesize, fd, count;
+    int filesize, fd, count, socket, file_count;
     std::map<std::string, int> entry;
     std::ifstream file;
     pthread_mutex_t *m; /* Need to have a pointer to a mutex - will find it from 'sock_mtx map' */
@@ -253,15 +239,15 @@ void *worker_thread(void *argp)
         if (work_queue.empty())              /* Queue is empty */
             pthread_cond_wait(&cvar2, &mtx); /* Wait for signal */
 
-        entry = work_queue.front();          /* Take the first pair <file, socket> */
-        work_queue.pop();                    /* Remove it from Queue */
-        filename = entry.begin()->first;     /* Extract <file> */
-        ta.sock = entry.begin()->second;     /* Extract <socket> */
-        m = &sock_mtx.find(ta.sock)->second; /* Find socket's mutex */
-        std::cout << "[Thread: " << pthread_self() << "]: Received task: <" << filename << ", " << ta.sock << ">\n";
+        entry = work_queue.front();        /* Take the first pair <file, socket> */
+        work_queue.pop();                  /* Remove it from Queue */
+        filename = entry.begin()->first;   /* Extract <file> */
+        socket = entry.begin()->second;    /* Extract <socket> */
+        m = sock_mtx.find(socket)->second; /* Find socket's mutex */
+        std::cout << "[Thread: " << pthread_self() << "]: Received task: <" << filename << ", " << socket << ">\n";
 
-        if (work_queue.size() < ta.queue_size) /* Queue not full */
-            pthread_cond_signal(&cvar1);       /* Awake other thread */
+        if (work_queue.size() < queue_size) /* Queue not full */
+            pthread_cond_signal(&cvar1);    /* Awake other thread */
 
         /* Unlock mutex */
         if (pthread_mutex_unlock(&mtx))
@@ -281,30 +267,32 @@ void *worker_thread(void *argp)
         /* Lock mutex */
         if (pthread_mutex_lock(m))
             perror_exit("pthread_mutex_lock failed");
+        std::cout << m << std::endl;
 
-        files_per_socket.find(ta.sock)->second -= 1; /* Decrease counter by 1 */
+        files_per_socket.find(socket)->second -= 1; /* Decrease counter by 1 */
+        file_count = files_per_socket.find(socket)->second;
 
         filename += "\n";
         /* Write 1) filename to socket */
-        if (write(ta.sock, filename.c_str(), filename.length()) < 0)
+        if (write(socket, filename.c_str(), filename.length()) < 0)
             perror_exit("write failed");
 
         /* Write 2) metadata to socket */
         in = htonl(filesize);
-        if (write(ta.sock, &in, sizeof(in)) < 0) /* Write filesize */
+        if (write(socket, &in, sizeof(in)) < 0) /* Write filesize */
             perror_exit("write failed");
 
         memset(buffer, 0, sizeof(buffer)); /* Clear buffer */
-        while (read(ta.sock, buffer, sizeof(buffer)) > 0)
+        while (read(socket, buffer, sizeof(buffer)) > 0)
             if (strcmp(buffer, "DONE") == 0) /* Wait for response that it got previous write */
                 break;
 
-        in = htonl(files_per_socket.find(ta.sock)->second);
-        if (write(ta.sock, &in, sizeof(in)) < 0) /* Write num_of_files left */
+        in = htonl(file_count);
+        if (write(socket, &in, sizeof(in)) < 0) /* Write num_of_files left */
             perror_exit("write failed");
 
         memset(buffer, 0, sizeof(buffer)); /* Clear buffer */
-        while (read(ta.sock, buffer, sizeof(buffer)) > 0)
+        while (read(socket, buffer, sizeof(buffer)) > 0)
             if (strcmp(buffer, "DONE") == 0) /* Wait for response that it got previous write */
                 break;
 
@@ -312,13 +300,13 @@ void *worker_thread(void *argp)
 
         while ((count = read(fd, buffer, sizeof(buffer))) > 0) /* Read a block from the file */
         {                                                      /* Write 3) file contents to socket */
-            if (write(ta.sock, &buffer, count) < 0)
+            if (write(socket, &buffer, count) < 0)
                 perror_exit("write failed");
             memset(buffer, 0, sizeof(buffer)); /* Clear buffer */
         }
 
         memset(buffer, 0, sizeof(buffer)); /* Clear buffer */
-        while (read(ta.sock, buffer, sizeof(buffer)) > 0)
+        while (read(socket, buffer, sizeof(buffer)) > 0)
             if (strcmp(buffer, "DONE") == 0) /* Wait for response that it got previous write */
                 break;
 
@@ -326,13 +314,15 @@ void *worker_thread(void *argp)
         if (pthread_mutex_unlock(m))
             perror_exit("pthread_mutex_unlock");
 
-        if (files_per_socket.find(ta.sock)->second == 0)
+        close(fd);
+
+        if (file_count == 0)
         {
-            close(ta.sock);
+            files_per_socket.erase(socket);
+            sock_mtx.erase(socket);
+            close(socket);
             pthread_mutex_destroy(m);
         }
-
-        close(fd);
     }
 
     pthread_exit(NULL);
@@ -346,15 +336,11 @@ void perror_exit(std::string message)
 
 void _handler(int signum)
 {
-    if (signum == SIGINT)
-    {
-        close(server_sock); /* Close server's socket */
-        close(newsock);
+    close(server_sock); /* Close server's socket */
 
-        pthread_mutex_destroy(&mtx);
+    pthread_mutex_destroy(&mtx);
 
-        delete[] tids;
+    delete[] tids;
 
-        raise(SIGKILL);
-    }
+    raise(SIGKILL);
 }

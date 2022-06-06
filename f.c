@@ -8,7 +8,7 @@ int main(){
   for (int i = 0; i < 20; i++){
   pid_t p = fork();
   if (!p){
-    char* argv[] = { "remoteClient","-i","127.0.0.1","-p","12500","-d","Server3", NULL};
+    char* argv[] = { "remoteClient","-i","127.0.0.1","-p","12500","-d","Server", NULL};
   execv("./remoteClient",argv);
   }
 }

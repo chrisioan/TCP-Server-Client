@@ -1,7 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="48eada10-d5c0-4c24-9b97-b5ffc2668b2b" name="Changes" comment="" />
+    <list default="true" id="48eada10-d5c0-4c24-9b97-b5ffc2668b2b" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Makefile" beforeDir="false" afterPath="$PROJECT_DIR$/Makefile" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/dataServer.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/dataServer.cpp" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/f" beforeDir="false" afterPath="$PROJECT_DIR$/f" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/f.c" beforeDir="false" afterPath="$PROJECT_DIR$/f.c" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/func_def.h" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/remoteClient.cpp" beforeDir="false" afterPath="$PROJECT_DIR$/remoteClient.cpp" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -30,6 +39,8 @@
       <option name="presentableId" value="Default" />
       <updated>1654167940184</updated>
       <workItem from="1654167944001" duration="4000" />
+      <workItem from="1654436036436" duration="2837000" />
+      <workItem from="1654449330575" duration="8903000" />
     </task>
     <servers />
   </component>
