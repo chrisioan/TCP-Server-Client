@@ -267,7 +267,6 @@ void *worker_thread(void *argp)
         /* Lock mutex */
         if (pthread_mutex_lock(m))
             perror_exit("pthread_mutex_lock failed");
-        std::cout << m << std::endl;
 
         files_per_socket.find(socket)->second -= 1; /* Decrease counter by 1 */
         file_count = files_per_socket.find(socket)->second;
