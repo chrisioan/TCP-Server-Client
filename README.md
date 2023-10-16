@@ -59,9 +59,9 @@ Where:
 <br/><br/>
 
 ## General Notes
-1. 
-2. 
-3. 
+1. There are parts of code that I have taken from the class slides (function "perror_exit," code for creating the sockets, including the structs, initializing their fields, bind, listen, accept, etc.).
+2. When providing the argument `<directory>` for ./remoteClient, please do NOT include a `slash (/)` at the end of the argument. In some cases (e.g. when there are subdirectories), it is added already, so if you include a slash, it could result in a path like `Server//test/file1` which may cause issues.
+3. The creation of the directory to copy (`<directory>`), is done within another folder called `output (build/release/output)`, which is defined in [remoteClient.hpp](https://github.com/chrisioan/TCP-Server-Client/blob/main/include/remoteClient.hpp).
 <br/><br/>
 
 ## Data Server
