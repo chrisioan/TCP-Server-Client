@@ -3,8 +3,8 @@
 
 # Except these:
 !.gitignore
-!include
-!src
+!include/
+!src/
 !hw2-spring-2022_paper.pdf
 !Makefile
 !README_greek.txt
