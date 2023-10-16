@@ -1,24 +1,33 @@
-# In order to execute this "Makefile" just type "make" or "make ALL"
-.PHONY: clean
-OBJS	= dataServer.o remoteClient.o
-OUT	= dataServer remoteClient
+# In order to execute this "Makefile" just type "make" or "make all"
+.PHONY: all clean
+
 CPP	= g++
-FLAGS	= -g -Wall -c -lpthread
+CFLAGS	= -g -Wall -c -lpthread
+LFLAGS	= -fsanitize=address -g3
 
-ALL: clean $(OBJS) $(OUT)
+SRC_DIR	= src
+BUILD_DIR = build/release
 
-dataServer.o: dataServer.cpp
-	$(CPP) $(FLAGS) dataServer.cpp
-	
-remoteClient.o: remoteClient.cpp
-	$(CPP) $(FLAGS) remoteClient.cpp
+OBJS	= $(BUILD_DIR)/dataServer.o $(BUILD_DIR)/remoteClient.o
+EXECUTABLES	= $(BUILD_DIR)/dataServer $(BUILD_DIR)/remoteClient
 
-dataServer:
-	$(CPP) -g dataServer.o -o dataServer -fsanitize=address -g3
+all: dir $(OBJS) $(EXECUTABLES)
 
-remoteClient:
-	$(CPP) -g remoteClient.o -o remoteClient -fsanitize=address -g3
+dir:
+	mkdir -p $(BUILD_DIR)
+
+$(BUILD_DIR)/dataServer.o:
+	$(CPP) $(CFLAGS) $(SRC_DIR)/dataServer.cpp -o $@
+
+$(BUILD_DIR)/remoteClient.o:
+	$(CPP) $(CFLAGS) $(SRC_DIR)/remoteClient.cpp -o $@
+
+$(BUILD_DIR)/dataServer:
+	$(CPP) $(LFLAGS) $(BUILD_DIR)/dataServer.o -o $@
+
+$(BUILD_DIR)/remoteClient:
+	$(CPP) $(LFLAGS) $(BUILD_DIR)/remoteClient.o -o $@
 
 # Clean things
 clean:
-	rm -f $(OBJS) $(OUT)
+	rm -r -f $(BUILD_DIR)/*
