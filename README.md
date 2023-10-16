@@ -65,9 +65,9 @@ Where:
 <br/><br/>
 
 ## Data Server
-Source code can be found here: [dataServer.cpp](https://google.com)
+Source code can be found here: [dataServer.cpp](https://github.com/chrisioan/TCP-Server-Client/blob/main/src/dataServer.cpp)
 <br/><br/>
 
 ## Remote Client
-Source code can be found here: [remoteClient.cpp](https://google.com)
+Source code can be found here: [remoteClient.cpp](https://github.com/chrisioan/TCP-Server-Client/blob/main/src/remoteClient.cpp)
 <br/><br/>
