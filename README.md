@@ -66,8 +66,52 @@ Where:
 
 ## Data Server
 Source code can be found here: [dataServer.cpp](https://github.com/chrisioan/TCP-Server-Client/blob/main/src/dataServer.cpp)
+
+While it's not mandatory, I have created a sigaction to detect the SIGINT signal in order to perform partial cleanup.
+
+Initially, there is a check to verify if the program has been executed correctly. After that, the provided arguments are initialized, as well as the conditional variables and mutex that will be needed for accessing the execution queue (work_queue).
+
+Then, the program creates the thread pool (tids), which generates a specified number of worker threads equal to <thread_pool_size>. In an infinite while loop (while(1)), the dataServer continually accepts incoming connections and creates a new communication thread, passing the socket received from the accept as an argument.
+
+In the communication thread (comm_thread), a mutex is initialized, which will be used to lock each worker thread and prevent access for reading/writing on the same socket by another worker thread. The server needs to ensure that, during its execution, only one worker thread writes data to a client's socket at a time.
+
+This mutex is declared as "static" to prevent it from being destroyed when the communication thread ends (it will be destroyed by a worker thread, as described later). It is declared as "thread_local" to ensure that each different communication thread creates its own mutex, making it unique each time a new thread is created.
+
+At this point, it's worth mentioning that the execution queue contains a map with filenames as keys and their corresponding sockets as values. Additionally, two other auxiliary maps have been implemented to provide necessary information to the worker threads:
+1. "files_per_socket" with sockets as keys and the number of files associated with each socket as values.
+2. "sock_mtx" with sockets as keys and mutex pointers as values.
+
+In the communication thread, the following actions take place:
+1. The thread reads the directory name to be copied from the socket.
+2. It initializes the value of the socket in the "files_per_socket" map to 0 and sets the "sock_mtx" map entry with the previously created mutex.
+3. The recursive function "find_files" is called twice, once with a flag of 0 (count the number of files) and once with a flag of 1 (enqueue the files for execution).
+
+In the "find_files" function, the following actions are performed:
+1. It checks if the entry is a directory. If it is, the "find_files" function is recursively called with the updated path and dir_entry.
+2. If the entry is a regular file, it should be added to the execution queue. To achieve this, a global mutex is locked, the necessary work is performed, and then the mutex is unlocked.
+3. After locking the mutex, there is a check to see if the execution queue is full. If it's full, the first condition variable should wait until there is space available. If it's okay to add the file, the appropriate message is printed, and the file (with its associated socket) is added to the queue.
+4. After this step, if the queue is not empty, the second condition variable (for the worker thread) is signaled.
+
+In the communication thread, the following actions occur within an infinite while loop (while(1)):
+1. Lock the mutex.
+2. If the execution queue is empty, wait on the second condition variable until a signal is received from the communication thread calling the recursive function "find_files" ("In case the execution queue is empty, worker threads should wait until a record is available").
+3. If it's okay to proceed, acquire the first file (with its associated socket) from the queue and its corresponding mutex from the "sock_mtx" map. Print the appropriate message.
+4. Check if the work_queue is no longer full to signal the first condition variable (allowing a communication thread to write) and unlock the global mutex.
+5. Open the file and use fseek with appropriate arguments to determine the number of bytes in the file. This information will be sent as metadata to inform the remoteClient when it has finished reading a file.
+6. Lock the mutex previously acquired to prevent other worker threads from writing to the same socket. Decrease the file count in the "files_per_socket" map and store the updated value in a variable called "file_count."
+7. First, write the filename (which also contains the path, to be split into pieces on the remoteClient).
+8. Then, write the metadata, including the filesize and the file_count. File_count is necessary for the remoteClient to know when to stop, indicating that it has received all the requested files.
+9. In a while loop, read the file's contents and write them over the socket in blocks (up to <block_size> bytes per block).
+10. In between, there are reads and message exchanges between the worker thread and the remoteClient to ensure proper communication.
+11. Finally, unlock the mutex and check if "file_count" is zero. If it is, the socket's data must be removed from the two maps, the one end of the socket should be closed, and the mutex should be destroyed.
 <br/><br/>
 
 ## Remote Client
 Source code can be found here: [remoteClient.cpp](https://github.com/chrisioan/TCP-Server-Client/blob/main/src/remoteClient.cpp)
+
+The program's execution begins with the initialization of arguments. It creates a socket, connects to the dataServer, and starts writing the directory to copy. In an infinite while loop (while(1)), it first reads the filename (including the path). It then breaks down the path into segments, creating all the necessary subdirectories. Subsequently, it creates the file (deletes it if it already exists), reads the metadata (sending "OK" messages after receiving them), and then reads the file's contents until the filesize becomes zero.
+
+There is no information on the [paper](https://github.com/chrisioan/TCP-Server-Client/blob/main/hw2-spring-2022_paper.pdf) regarding reading the file's contents from the socket - whether that needs to be done block by block so my approach is to use a fixed buffer size of 512. If the assignment required reading in blocks, one solution could be to include the block size as metadata and adjust the buffer size accordingly after the remoteClient receives this metadata.
+
+Finally, if "file_count" is set to 0, the remoteClient terminates.
 <br/><br/>
