@@ -10,7 +10,11 @@
 <br/><br/>
 
 ## About The Project
-The purpose of this project is to become familiar with system programming in a Unix environment, specifically focusing on multi-threading and network communication. The goal is to create a program that recursively copies the contents of a directory from a server to the local file system of a client. The server should be capable of handling requests from multiple clients concurrently, processing each request in parallel by breaking it down into independent file copy operations. Similarly, the client must process the data sent by the server and create a local copy of the requested directory, replicating the structure and files exactly as they exist on the server. The fundamental components of the design are the server and the client, and multiple clients can connect simultaneously to a server. Communication between them is facilitated through sockets.
+The purpose of this project is to become familiar with system programming in a Unix environment, specifically focusing on multi-threading and network communication. The goal is to create a program that recursively copies the contents of a directory from a server to the local file system of a client.
+
+The server should be capable of handling requests from multiple clients concurrently, processing each request in parallel by breaking it down into independent file copy operations. Similarly, the client must process the data sent by the server and create a local copy of the requested directory, replicating the structure and files exactly as they exist on the server.
+
+The fundamental components of the design are the server and the client, and multiple clients can connect simultaneously to a server. Communication between them is facilitated through sockets.
 <br/><br/>
 
 ## Requirements
